@@ -1,0 +1,107 @@
+<!-- templates/emails/email_list.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список сообщений</title>
+    <style>
+        #progress-container {
+            width: 100%;
+            background-color: #ddd;
+        }
+        #progress-bar {
+            width: 0%;
+            height: 20px;
+            background-color: #4caf50;
+            text-align: center;
+            color: white;
+        }
+        #progress-text {
+            color: black;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div id="progress-container">
+        <div id="progress-bar">
+            <span id="progress-text"></span>
+        </div>
+    </div>
+
+    <table>
+        <tr>
+            <th>Отправитель/Получатель</th>
+            <th>Дата отправки</th>
+            <th>Дата получения</th>
+            <th>Тема</th>
+            <th>Текст</th>
+            <th>Файлы</th>
+        </tr>
+        <tbody id="email-list">
+        </tbody>
+    </table>
+
+    <script>
+        async function loadEmails() {
+            const response = await fetch('/api/user/get-messages/{{ uid }}', {
+                method: 'GET',
+            });
+
+            if (response.ok) {
+                const emails = await response.json();
+
+                if (Array.isArray(emails)) {
+                    emails.forEach(email => addEmailRow(email));
+                } else {
+                    console.error('Ответ не является массивом:', emails);
+                    alert('Ошибка: ответ от сервера не является массивом.');
+                }
+            } else {
+                alert('Ошибка при загрузке сообщений');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadEmails);
+
+        const progressSocket = new WebSocket('ws://' + window.location.host + '/ws/progress/{{ uid }}/');
+
+        progressSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const progressText = document.getElementById('progress-text');
+            const progressBar = document.getElementById('progress-bar');
+
+            progressText.textContent = data.message;
+
+            if (data.type === "new_message" || data.type === "completed") {
+                const current = data.progress;
+                const total = data.result_progress;
+                const progressPercent = (data.type === "completed" || total === 0) ? 100 : (current / total) * 100;
+                progressBar.style.width = progressPercent + '%';
+            } else if (data.type === "error") {
+                alert("Ошибка: " + data.message);
+            }
+
+            if (data.type === "new_message") {
+                addEmailRow(data.data);
+            }
+        };
+
+        function addEmailRow(email) {
+            const emailList = document.getElementById('email-list');
+            const row = document.createElement('tr');
+            const attachmentsList = email.attachments.map(att => att.filename).join(', ') || 'Нет вложений';
+            row.innerHTML = `
+                <td>${email.subject}</td>
+                <td>${email.sent_date}</td>
+                <td>${email.received_date}</td>
+                <td>${email.message_subject.substring(0, 50)}...</td>
+                <td>${email.message_text.substring(0, 50)}...</td>
+                <td>${attachmentsList}</td>
+            `;
+            emailList.prepend(row);
+        }
+    </script>
+</body>
+</html>
